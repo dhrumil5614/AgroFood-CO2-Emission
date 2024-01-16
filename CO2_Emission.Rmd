@@ -1,0 +1,365 @@
+---
+title: "Agriculture CO2 Emission"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(tidyverse, warn.conflicts = FALSE)
+library(ggplot2)
+
+```
+
+```{r}
+df = read.csv("agrofood_co2_emission.csv")
+glimpse(df)
+```
+
+```{r}
+head(df)
+```
+
+```{r}
+df %>%
+distinct(Area)
+```
+
+```{r}
+US <- df[df$Area == 'United States of America',]
+US
+```
+
+```{r}
+summary(US)
+```
+```{r}
+missing_value <- sapply(df, function(x) sum(is.na(x)))
+glimpse(missing_value)
+
+```
+
+
+
+
+
+```{r}
+data <- data %>%
+  select(`Area`, `Year`, `Savanna fires`, `Forest fires`, `Crop Residues`, `Rice Cultivation`,
+         `Drained organic soils (CO2)`, `Pesticides Manufacturing`, `Food Transport`, 
+         `Forestland`, `Net Forest conversion`, `Food Household Consumption`, `Food Retail`, 
+         `On-farm Electricity Use`, `Food Packaging`, `Agrifood Systems Waste Disposal`, 
+         `Food Processing`, `Fertilizers Manufacturing`, `IPPU`, `Manure Management`, 
+         `Fires in humid tropical forests`, `On-farm energy use`, `Rural population`, 
+         `Urban population`, `Total Population - Male`, `Total Population - Female`, 
+         `total_emission`, `Average Temperature °C`)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+### clustering
+
+
+```{r}
+library(tidyverse)
+library(scales) 
+```
+
+
+
+```{r}
+# Subset data for the year 2020
+df_2020 <- df %>%
+  filter(Year == 2020)
+```
+
+
+```{r}
+# Drop NA values
+df_2020 <- df_2020 %>%
+  select_if(~ !any(is.na(.)))
+
+```
+
+
+```{r}
+# Display information about the filtered dataframe
+glimpse(df_2020)
+```
+
+
+
+```{r}
+# Reset index
+df_2020 <- df_2020 %>%
+  mutate(row_id = row_number()) %>%
+  select(-Year) %>%
+  select(row_id, everything())
+```
+
+
+
+```{r}
+# Display first few rows of the filtered dataframe
+head(df_2020)
+```
+
+
+```{r}
+# Select columns for clustering
+df_clus <- df_2020 %>%
+  select(-Area, -row_id)
+```
+
+
+
+```{r}
+# Standardize the data
+df_sc <- df_clus %>%
+  scale() %>%
+  as.data.frame()
+
+```
+
+
+```{r}
+# KMeans clustering
+set.seed(123) # For reproducibility
+
+distortions <- vector()
+
+for (i in 1:10) {
+  km <- kmeans(df_sc, centers = i, nstart = 10)
+  distortions[i] <- km$tot.withinss
+}
+```
+
+
+
+```{r}
+# Plot distortion vs. number of clusters
+plot(1:10, distortions, type = "o", xlab = "Number of clusters", ylab = "Distortion")
+
+
+```
+
+
+```{r}
+# Fit KMeans model with 4 clusters
+model <- kmeans(df_sc, centers = 4, nstart = 10)
+cluster <- model$cluster
+
+```
+
+
+
+
+```{r}
+# Add 'Country' and 'Cluster' columns to the dataframe
+df_clus$Country <- df_2020$Area
+df_clus$Cluster <- cluster
+```
+
+
+
+```{r}
+
+# Plot barplot and pieplot by Cluster
+df_clus %>%
+  group_by(Cluster) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x = factor(Cluster), y = count)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Barplot by Cluster") +
+  theme_minimal()
+```
+
+
+```{r}
+df_clus %>%
+  group_by(Cluster) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x = "", y = count, fill = factor(Cluster))) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  labs(title = "Pieplot by Cluster") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+
+### Time Series Analysis
+
+
+```{r}
+library(readr)
+library(stats)
+library(forecast)
+library(tseries)
+```
+
+#### Load data
+```{r}
+
+data = read.csv("agrofood_co2_emission.csv")
+glimpse(data)
+```
+
+
+
+
+```{r}
+data_f <- data[data$Area == 'United States of America',]
+data_f
+```
+
+
+
+```{r}
+# Select the column to forecast
+mystock <- data_f$total_emission
+
+plot(mystock, type = "l", main = "MRF closing Price")
+
+```
+
+
+
+
+```{r}
+# Function to check data stationarity
+checkStationarity <- function(data){
+  pvalue <- adf.test(data)$p.value
+  
+  if (pvalue < 0.05){
+    msg <- paste("pvalue =", pvalue, ". Data is stationary. Proceed to model building")
+  } else {
+    msg <- paste("pvalue =", pvalue, ". Data is not stationary. Difference the data before model building")
+  }
+  
+  return(msg)
+}
+```
+
+
+```{r}
+# Check for data stationarity
+checkStationarity(mystock)
+```
+
+
+
+```{r}
+# Difference the data
+diff_mystock <- diff(mystock)
+
+plot(diff_mystock, type = "l", main = "MRF closing Price (Differenced)")
+```
+
+
+```{r}
+# Check if the differenced data is stationary
+checkStationarity(diff_mystock)
+
+```
+
+
+
+
+
+
+```{r}
+# Difference the data
+db_diff_mystock <- diff(diff_mystock)
+
+plot(db_diff_mystock, type = "l", main = "MRF closing Price (Differenced)")
+```
+
+
+
+```{r}
+# Check if the differenced data is stationary
+checkStationarity(db_diff_mystock)
+
+```
+
+
+
+```{r}
+# ACF and PACF plots to determine p and q values
+lag_acf <- acf(diff_mystock, lag.max = 20, plot = FALSE)$acf
+lag_pacf <- pacf(diff_mystock, lag.max = 20, plot = FALSE)$acf
+
+```
+
+```{r}
+
+# Create a plot for the auto-correlation
+plot(lag_acf, main = "Auto Correlation", ylab = "Correlation", xlab = "Lag", type = "b", col = "blue", lwd = 2)
+lines(lag_pacf, type = "b", col = "red", lwd = 2)
+legend("topright", legend = c("ACF", "PACF"), col = c("blue", "red"), lwd = 2)
+abline(h = 0, col = "gray", lty = 2)
+abline(h = -1.96/sqrt(length(diff_mystock)), col = "gray", lty = 2)
+abline(h = 1.96/sqrt(length(diff_mystock)), col = "gray", lty = 2)
+
+
+```
+
+
+
+```{r}
+# Create a plot for the partial auto-correlation
+plot(lag_pacf, main = "Partial Auto Correlation", ylab = "Correlation", xlab = "Lag", type = "b", col = "red", lwd = 2)
+abline(h = 0, col = "gray", lty = 2)
+```
+
+
+#### Build the ARIMA model with initial parameters (0, 0, 0)
+
+```{r}
+p <- 0; q <- 0; d <- 0
+m1 <- arima(diff_mystock, order = c(p, d, q))
+```
+
+
+```{r}
+# White Noise (Test using the Ljung-Box test)
+pvalue <- Box.test(m1$residuals, lag = 1, type = "Ljung-Box")$p.value
+
+if (pvalue < 0.05) {
+  print(paste("pvalue =", pvalue, ". Bad Model"))
+} else {
+  print(paste("pvalue =", pvalue, ". Good Model"))
+}
+```
+
+```{r}
+# AIC, BIC Score
+print(paste("Model 1 AIC =", AIC(m1), "BIC =", BIC(m1)))
+```
+
+#### Forecasting for the next 'n' months
+
+```{r}
+f1 <- forecast(m1, h = 3)
+print(f1)
+```
+
+
+
+
+
+
+
+
+
+
